@@ -1,0 +1,197 @@
+.nf
+NAME:
+	sortlib - sorting and quantile routines
+
+SYNOPSIS:
+
+	Sort an array of various types, possibly carry an integer array
+	---------------------------------------------------------------
+	  void tsort_s(int n, short int *x, int *idx);
+	  void tsort_u(int n, unsigned short *x, int *idx);
+	  void tsort_i(int n, int *x, int *idx);
+	  void tsort_I(int n, long long int *x, int *idx);
+	  void tsort_f(int n, float *x, int *idx);
+	  void tsort_d(int n, double *x, int *idx);
+	  void tsort_D(int n, long double *x, int *idx);
+	  void tsort_str(int n, char **x, int *idx);
+
+	Sort an array of various types, possibly carry a pointer array
+	--------------------------------------------------------------
+	  void tsort_sp(int n, short int *x, void* *idx);
+	  void tsort_up(int n, unsigned short *x, void* *idx);
+	  void tsort_ip(int n, int *x, void* *idx);
+	  void tsort_Ip(int n, long long int *x, void* *idx);
+	  void tsort_fp(int n, float *x, void* *idx);
+	  void tsort_dp(int n, double *x, void* *idx);
+	  void tsort_Dp(int n, long double *x, void* *idx);
+	  void tsort_strp(int n, char **x, void* *idx);
+
+	Return a quantile of an array of various types, possibly weighted
+	-----------------------------------------------------------------
+	       short int quantile_s(int n, short int *x, double *wgt, double q);
+	  unsigned short quantile_u(int n, unsigned short *x, double *wgt, double q);
+	             int quantile_i(int n, int *x, double *wgt, double q);
+	             int quantile_I(int n, long long int *x, double *wgt, double q);
+	           float quantile_f(int n, float *x, double *wgt, double q);
+	          double quantile_d(int n, double *x, double *wgt, double q);
+	     long double quantile_D(int n, long double *x, double *wgt, double q);
+
+	Simple, fast median of an array of various types (N even returns average)
+	-----------------------------------------------------------------
+	       short int median_s(int n, short int *x);
+	  unsigned short median_u(int n, unsigned short *x);
+	             int median_i(int n, int *x);
+	             int median_I(int n, long long int *x);
+	           float median_f(int n, float *x);
+	          double median_d(int n, double *x);
+	     long double median_D(int n, long double *x);
+
+	Fortran functions
+	-----------------
+	  INTEGER*2 XS(N), S,            QUANTILE_S, WQUANTILE_S, MEDIAN_S
+	  INTEGER   XI(N), I, IDX(N),    QUANTILE_I, WQUANTILE_I, MEDIAN_I
+	  REAL*4    XF(N), F,            QUANTILE_F, WQUANTILE_F, MEDIAN_F
+	  REAL*8    XD(N), D, Q, WGT(N), QUANTILE_D, WQUANTILE_D, MEDIAN_D
+	  CALL TSORT_S(N, XS)
+	  CALL TSORT_I(N, XI)
+	  CALL TSORT_F(N, XF)
+	  CALL TSORT_D(N, XD)
+	  CALL TSORT_AUX_S(N, XS, IDX)
+	  CALL TSORT_AUX_I(N, XI, IDX)
+	  CALL TSORT_AUX_F(N, XF, IDX)
+	  CALL TSORT_AUX_D(N, XD, IDX)
+	  S = QUANTILE_S(N, XS, Q)
+	  I = QUANTILE_I(N, XI, Q)
+	  F = QUANTILE_F(N, XF, Q)
+	  D = QUANTILE_D(N, XD, Q)
+	  S = WQUANTILE_S(N, XS, WGT, Q)
+	  I = WQUANTILE_I(N, XI, WGT, Q)
+	  F = WQUANTILE_F(N, XF, WGT, Q)
+	  D = WQUANTILE_D(N, XD, WGT, Q)
+	  S = MEDIAN_S(N, XS)
+	  I = MEDIAN_I(N, XI)
+	  F = MEDIAN_F(N, XF)
+	  D = MEDIAN_D(N, XD)
+
+
+DESCRIPTION: 
+	The tsort() function sorts an array with "n" elements.  The
+	"x" argument points to the start of the array.  Seven versions
+	times two are provided according to array data type:
+
+	  tsort_s() :   x array is short (16 bit) integer,
+	  tsort_u() :   x array is unsigned short (16 bit) integer
+	  tsort_i() :   x array is integer
+	  tsort_I() :   x array is 64 bit integer
+	  tsort_f() :   x array is float (32 bit)
+	  tsort_d() :   x array is double (64 bit)
+	  tsort_D() :   x array is long double (128 bit)
+	  tsort_str():  x array is C string pointer
+
+	  tsort_sp() :  optional idx array is a pointer instead of int
+	  tsort_up() :  optional idx array is a pointer instead of int
+	  tsort_ip() :  optional idx array is a pointer instead of int
+	  tsort_Ip() :  optional idx array is a pointer instead of int
+	  tsort_fp() :  optional idx array is a pointer instead of int
+	  tsort_dp() :  optional idx array is a pointer instead of int
+	  tsort_Dp() :  optional idx array is a pointer instead of int
+	  tsort_strp(): optional idx array is a pointer instead of int
+
+	tsort()'s third argument "idx" is NULL or an int or pointer
+	array of the same size as "x".  It is carried along during the
+	sort so the final order of "idx" follows the order of "x".
+	For example, integer "idx" can be initialized with with 0:n-1,
+	and after sorting becomes a index into other arrays according
+	to ascending order of "x".  After sorting "x[0]" is the
+	smallest element of "x" and the value of a corresponding
+	unsorted array "y" is "y[idx[0]]".  Pointer idx can similarly
+	be a array of pointers to elements of an auxiliary array whose
+	order will match that of "x" after sorting.
+
+	tsort() does not retain the initial order of array elements
+	of equal value.  It is straightforward to use an "idx" array
+	to re-sort ties if it is important to preserve this initial
+	order.
+
+	The quantile() routines compute a quantile "q" of an array
+	"x", where 0<=q<=1.  For example "q=0.5" requests the median.
+
+	The array is left in a partially sorted state.  For n>200 the
+	quantile() routines select a subarray of the data that
+	contains the desired quantile, moves it to the start of the
+	array, and sorts just the subarray.  As a result quantile()'s
+	execution time is linear in "n", and becomes a factor of 2
+	faster than sorting the full array for "n" greater than ~1000.
+	Apart from reordering, the array is left intact.
+
+	If the "wgt" argument to the quantile() function is NULL, the
+	result of quantile() ranges continuously from the smallest "x"
+	to the largest "x" as the "q" argument ranges from 0 to 1.
+	The "q" argument creates an index into the "x" array and a
+	fractional combination of adjacent entries as required.  For
+	example, the "q=0.5" quantile for even "n" is the average of
+	the two central values, whereas it is the exact central value
+	when "n" is odd.
+
+	quantile() can also be provided a non-negative weight array "wgt"
+        that returns a "weighted quantile".  This is derived using a
+	fraction "q" of the sum of all weights and a piecewise linear
+	function that steps from zero by the weight "wgt" of each
+	sorted point to the sum of all weights, changing slope at the
+	midpoints of each sorted "x" and its neighbors.  If the sum of
+        the "wgt" is less than or equal to zero (surely inadvertent!)
+        quantile() returns data[n/2].
+
+	The "wgt" array is carried along with the "x" during all
+	operations so multiple calls to quantile() are valid.
+
+	The weighted quantile() is particularly useful for statistical
+	data that may have outlier points.  Using the inverse variance
+	of each point as weights preserves the power of normal
+	statistics, but using a quantile instead of a statistical sum
+	does not let a point with extreme value affect the result more
+	than its weight allows.
+
+	Note that the unweighted and weighted quantiles can be
+	slightly different.  The unweighted median and quartiles of a
+	discrete set of points 0,1,2,3 are 0.75, 1.5, and 2.25.  The
+	weighted quantiles for these points, each with a weight of 1,
+	are 0.5, 1.5, and 2.5 because quantile() sees weight increasing
+	by 1.0 at points 0,1,2, culminating at a cumulative weight
+	of 4.0 at point 3.
+
+        This library also provides median functions that are very fast
+        for modest N.  N<8 uses hardwired sorting networks that do not
+        change the order of the input array, 8<=N<=200 uses a low
+        overhead insertion sort, and N>200 switches to quantile() at
+        0.5.  The input array is left in a partially sorted state for
+        N>7.  When N is even the functions return the average of the
+        central two values.
+
+	tsort() uses a quicksort algorithm whose run time goes as
+	NlogN.  On a generic 3.6GHz CPU tsort_d() takes about
+	3.6[nsec]*Nlog_2N, about 60% faster than the GNU qsort().
+	quantile_d() takes about 20[nsec]*N.  For N<50 median_f()
+	takes about 1.2[nsec]*N.  These values are strongly affected
+	by CPU, CPU speed, C++ compiler and optimizer.  For a particular
+        application and N you may find adjusting the #DEFINE statements
+        at the top of tsort.cpp may have a dramatic effect on run time.
+
+RETURN VALUE:
+	The tsort() function returns no value.  quantile() and median()
+        return the requested quantile in the data type of the array.
+
+EXAMPLES:
+
+
+
+
+BUGS AND CHANGES:
+	210227 - add median()
+	180101 - first version.
+
+SEE ALSO:
+	
+
+AUTHOR:
+	John Tonry

@@ -1,0 +1,658 @@
+.nf
+NAME:
+	puma - fit a solar system orbit to observations
+
+SYNOPSIS:
+	puma -in inputfile [options]
+
+DESCRIPTION: 
+	puma (Position Using Motion under Acceleration) reads observations
+	and fits an orbit to them, based on a polynomial approximation to the
+	accelerated trajectory.
+
+	Three or more observations may be used to determine the 3D position
+	and velocity of an object (at least formally), but if the vectors
+	between observer and object are coplanar the range and radial velocity
+	are indeterminate and the angular positions fall on a great circle.
+	If there is non-linear (i.e. accelerated) motion of the object with
+	respect to the observer the motion deviates from a constant angular
+	velocity great circle and a 3D position may be calculated.
+
+	The basic algorithm is to start with a range r from the Earth-Moon
+	barycenter and radial velocity vr for a particular observation.  Given
+	this a (linear) great circle fit provides an estimate of the
+	trajectory across the sky and the angular velocity.  This permits a
+	(linear) calculation of the ranges at other observation times from the
+	gravitational and centrifugal accelerations.  Given these ranges, a
+	(linear) polynomial fit to the 3D acceleration vectors may be
+	integrated to remove the non-linear component of the 3D motion of the
+	object and a (linear) fit to the resultant motion provides a complete
+	estimate of the object's location.  These linear fits are extremely
+	fast.  The predicted locations are compared with observations on the
+	sky and a chi^2/N figure of merit indicates the validity of the choice
+	of (r,vr) and the fit.
+
+	puma reads observational data in "trd" format, converts RA,Dec to
+	ecliptic coordinates, calculates observer and Earth-Moon barycenter
+	locations, velocities, and accelerations at each time, and then fits
+	an orbit under the influence of the Sun and Earth.
+
+	puma can provide a grid of chi^2/N and/or run a non-linear least
+	squares	fit over (r,vr) to find the best value.  Internally puma uses
+	variables ln(r/AU) and vr/r to minimize covariance and error estimates
+	are provided for thos variables.
+
+	puma can be requested to perform search for the best fit over a grid
+	of possibilities in r,vr using the "-grid nr,r0,r1,nv,v0,v1" ("-grid"
+	with no argument is translated to "-grid 20,1e-4,10,20,-20,20"), using
+	logarithmic steps in r and linear steps in vr.  Obviously evaluation
+	at a single r,vr is a special input case.  puma is quite fast, about 1
+	usec per observation per r,vr computation, so a 20x20 grid on 4 points
+	consumes less than 10 msec.
+
+	puma can also be asked to do a non-linear, least-squares fit for the
+	best r,vr using the "-fit" option.  If a "-grid" computation is
+	requested it precedes the fit, and the initial conditions for the fit
+	are taken from the best r,vr found by the grid.  Without a preceding
+	"-grid", puma uses initial conditions 0.03 AU and 0.01 km/s for r,vr,
+	unless the "-r R" and "-v V" options are used to set other initial
+	values.
+
+	puma needs to know the location of the observer for each observation,
+	but can use default values from the command line ("-lng L", "-lat D",
+	"-elev A") or this information can be provided on any input line.
+
+	puma reads an input file of observations, line by line, skipping lines
+	that are blank or start with a '#' sign ("-in infile", where 'infile'
+	of '-' means stdin).  Each line can provide up to 9 items; missing
+	items are filled in by defaults from the command line.
+
+	The 9 items puma can interpret from an input line are:
+
+	  MJD RA Dec obserr tngerr lng lat elev obsID
+
+	where
+
+	  MJD = modified Julian date at the midpoint of the exposure
+	  RA, Dec = J2000 apparent coordinates [deg]
+	  obserr = astrometric error (across track) [arcsec]
+	  tngerr = astrometric error along track [arcsec]
+	  lng,lat = observer location on the Earth (WGS84) [deg]
+	  elev = observer elevation above the WGS84 spheroid [m]
+	  obsID = arbitrary string of length less than 31 characters.
+
+	The content options for each line are interpreted according to the
+	number of items present:
+
+	  3 items: MJD RA Dec (obserr tngerr lng lat elev from cmd line)
+	  4 items: MJD RA Dec obserr (tngerr=obserr lng lat elev from cmd line)
+	  5 items: MJD RA Dec obserr tngerr (lng lat elev from command line)
+	  8 items: MJD RA Dec obserr tngerr lng lat elev  (obsID='Anon')
+	  9 items: MJD RA Dec obserr tngerr lng lat elev obsID
+
+	The default for obserr is 0.1 arcsec, but can be provided on the
+	command line as "-obserr X".  The default for tngerr is obserr, and
+	the default for obsID is 'Anon'.  Thus, puma can combine observations
+	from multiple observatories by specifying the observer location on the
+	data line.
+
+	A typical trd format input file for puma looks like:
+
+58780.519070 57.99203 12.31963 0.15 0.15 -155.5763 19.5363 3412 01a58780o0621o 
+58780.523186 57.92816 12.36724 0.14 0.14 -155.5763 19.5363 3412 01a58780o0629o 
+58780.529733 57.82724 12.44256 0.15 0.15 -155.5763 19.5363 3412 01a58780o0642o 
+58781.379877 48.41257 19.61332 0.22 0.22 -155.5763 19.5363 3412 01a58781o0308o 
+58781.386394 48.35144 19.65388 0.28 0.28 -155.5763 19.5363 3412 01a58781o0321o 
+58781.398933 48.23448 19.73089 0.21 0.21 -155.5763 19.5363 3412 01a58781o0345o 
+
+	The standard output from puma then is:
+
+Orbit with respect to the Sun
+E,P,a,ecc,i,Egeo,dEgeo= -359.68  1.370  1.233 0.369  9.272  1.107  0.179 // [(km/s)^2] [year] [AU] [] [deg]
+ndet=             6  // number of detections fitted
+ndate=            2  // number of distinct epochs
+t0=    58781.379877  // [MJD] reference time (observer)
+r=          2854313  // [km] distance from barycenter to obj at t=ref
+rau=     1.9080e-02  // [AU] distance from barycenter to obj at t=ref
+dlnr=        0.0090  // uncertainty in ln(r)
+Vr=        10.49101  // [km/s] radial velocity of obj wrt barycenter
+Vr/r=       0.31756  // [/day] radial vel/dist of obj wrt barycenter
+dV/r=       0.00051  // [/day] uncertainty in Vr/r
+rvcov=        0.190  // covariance between ln(r) and vr/r
+chi/N=        2.108  // chi^2/Ndof
+xrms=         0.133  // [arcsec] cross-track RMS
+trms=         0.245  // [arcsec] tangential RMS
+xcrv=     4.178e-05  // [arcsec/day^2] cross-track curvature
+tcrv=     2.232e-03  // [arcsec/day^2] tangential curvature
+tperi=     58779.03  // [MJD] time of closest approach
+rperi=     0.009385  // [AU] distance of closest approach
+wperi=      42.4783  // [deg/day] ang vel at closest approach
+raperi=        93.5  // [deg] RA at closest approach
+decperi=      -17.1  // [deg] Dec at closest approach
+
+	The meaning of these quantities is:
+
+	The orbital parameters with respect to Sun or Earth (if	the object
+	is determined to be bound to the Earth):
+
+Orbit with respect to the Sun
+E,P,a,ecc,i,Egeo,dEgeo= -359.68  1.370  1.233 0.369  9.272  1.107  0.179 // [(km/s)^2] [year] [AU] [] [deg]
+
+        The energy Egeo with respect to the Earth is also included to help
+        evaluate whether the object may have been erroneously classified
+        as heliocentric.  There is an uncertainty included for Egeo, but it is
+        based on the local behavior of parameter space and will not flag a
+        local, false optimum to the parameter fit.  Only a grid search can
+        find the global optimum.
+
+	The number of observations being fitted and the number of "distinct"
+	dates (greater than 0.4 day between neighbors):
+
+ndet=             6  // number of detections fitted
+ndate=            2  // number of distinct epochs
+
+	The MJD time origin for the calculation (observer time):
+
+t0=    58781.379877  // [MJD] reference time (observer)
+
+	The fitted distance between Earth-Moon barycenter and the object
+	at time of light emission at the reference time, and uncertainty:
+
+r=          2854313  // [km] distance from barycenter to obj at t=ref
+rau=     1.9080e-02  // [AU] distance from barycenter to obj at t=ref
+dlnr=        0.0090  // uncertainty in ln(r)
+
+	The fitted radial velocity between Earth-Moon barycenter and the object
+	at time of light emission at the reference time, and uncertainty:
+
+Vr=        10.49101  // [km/s] radial velocity of obj wrt barycenter
+Vr/r=       0.31756  // [/day] radial vel/dist of obj wrt barycenter
+dV/r=       0.00051  // [/day] uncertainty in Vr/r
+
+	The covariance between fit variable ln(r) and vr/r:
+
+rvcov=        0.190  // covariance between ln(r) and vr/r
+
+	chi^2/N, where the number of degrees of freedom is 2*Nobs-6.
+
+chi/N=        2.108  // chi^2/Ndof
+
+	The cross-track and along-track RMS:
+
+xrms=         0.133  // [arcsec] cross-track RMS
+trms=         0.245  // [arcsec] tangential RMS
+
+	The cross-track and along-track curvatures (i.e. systematic
+	residuals):
+
+xcrv=     4.178e-05  // [arcsec/day^2] cross-track curvature
+tcrv=     2.232e-03  // [arcsec/day^2] tangential curvature
+
+	The estimated time of perigee, the barycenter distance,	angular
+	velocity, RA, and Dec at that time:
+
+tperi=     58779.03  // [MJD] time of closest approach
+rperi=     0.009385  // [AU] distance of closest approach
+wperi=      42.4783  // [deg/day] ang vel at closest approach
+raperi=        93.5  // [deg] RA at closest approach
+decperi=      -17.1  // [deg] Dec at closest approach
+
+	An ephemeris prediction may be requested at MJD (or MJDs) "-ephmjd M"
+	and by specifying an output file "-eph fname".
+	"-ephmjd startMJD:endMJD:deltaMJD" is an alternative syntax (where
+	deltaMJD may be followed by "h" or "m" to indicate units of hours or
+	minutes) to request all MJD from startMJD to endMJD with interval
+	deltaMJD.  A third option is "-ephmjd file:fname" which reads all MJD
+	values from file "fname".  This file may include up to 5 entries per
+        line, starting with desired MJD, followed by a (less than 32 character)
+        identity string, followed by the site longitude (E deg), latitude (deg),
+        and elevation above geoid (m).
+
+	A number N (default 100) of random realizations of the input data
+	("-nscat N") and possible values for R,VR allowed by the fit are
+	explored with the results written to an output file specified by
+	"-scat fname".  Each line of the output file has an index for the
+	random iteration, an index for the ephemeris MJD and the MJD, RA, Dec,
+	chi^2/N, R, VR.  Note that the observer location for these ephemeris
+	predictions is specified on the command line as
+        "-ephlng L -ephlat D -ephelev H", otherwise the observer data for the
+        last data point in the input file is otherwise used.
+
+	The flag "-json" causes all requested output be written on stdout
+	in json format.
+
+INPUT OPTIONS:
+	-lng longitude   [default none]
+	-lat latitude    [default none]
+	-elev elevation  [default none]
+	  observation east longitude, latitude [deg], and elevation [m]
+
+	-obserr X        [default 0.1]
+	  set the default data point astrometric error to X [arcsec]
+	  
+	-verbose N    [default 0]
+	  increase verbosity to level N
+
+	-in fname     [default stdin]
+	  specify input file of observations in orfit format
+
+FIT OPTIONS:
+	-r R          [default 0.03 AU]
+	  set the initial distance to R [AU] (equivalent to a grid of 1 in r).
+          If r>200 it is interpreted as [km] instead of [AU]
+          
+	-v V          [default 0.01 km/s]
+	  set the initial radial velocity to V [km/s] (equivalent to
+	  a grid of 1 in v)
+
+	-fit           [default no]
+	  find the best-fit r,vr.  If a grid search is done as well as
+	  a fit, the best grid value for r,vr is the initial condition
+	  for the fit.
+
+	-grid nr,rmin,rmax,nv,vmin,vmax       [default none]
+	  evaluate the goodness of fit to the data on a grid in r,vr,
+	  stepping from rmin to rmax in nr log steps and vmin to vmax
+	  in nv steps.  r has units [AU] and v units of [km/s].  Report
+	  the best fit found on the grid.  The best r,vr from a grid
+	  search is used for the initial conditions for a fit.
+
+	-grid		[default none]
+	  equivalent to "-grid 20,1e-4,10,20,-20,20".
+
+	-wgrid		[default not]
+	  grid in even steps of vr/r instead of vr.
+
+	-gridout fname	[default none]
+	  if chi^2/N is calculated over a grid in R,VR, write each of the
+	  results to file fname: R index, V index, R[AU], logR[AU],
+	  VR[km/s], chi^2/N.
+
+OUTPUT OPTIONS:
+        -resid fname        [default stdout]
+          write residuals to fname
+
+	-ephmjd MJD[,M2,...]      [default none]
+	-ephmjd MJD1:MJD2:dMJD    [default none]
+	-ephmjd file:fname        [default none]
+	  compute predicted ephemeris at these specific comma-separated MJD 
+	  A CSV list with spaces must be quoted.  The predicted RA,Dec will
+	  appear in a residual list, and an ephemeris scatter plot will be
+	  evaluated for each of these MJD.  An alternative syntax of colon
+	  separated start MJD, end MJD, and time interval may also be used.
+	  The time interval is in days unless followed by "h" or "m" to
+	  indicate hours or minutes respectively.  MJD values will be read
+	  from file fname if the syntax "file:fname" is provided.  If a
+	  second string is found on the line (LESS THAN 31 characters!) it
+	  will be reported as the obsid on the output.  The current maximum
+	  number of ephemeris dates is 5000.  The observer location for the
+          ephemerides is that of the last observation or can be specified
+          using -ephlng -ephlat and -ephelev.
+
+	-eph fname       [default stdout]
+	  if computing ephemerides, write output to this file
+
+	-ephlng longitude   [default last observation]
+	-ephlat latitude    [default last observation]
+	-ephelev elevation  [default last observation]
+	  ephemerides east longitude, latitude [deg], and elevation [m]
+
+	-nscat N          [default 100]
+	  number of random realizations of observations and r,vr for each
+	  ephemeris date.
+	-scat fname       [default none]
+	  if ephemeris scatter plot, write to this file
+
+	-chimax X        [default 20]
+	  include ephemeris scatter points which chi-chi0<chimax
+
+	-json            [default no]
+	  write output in JSON format.  When JSON is on, residuals are 
+          automatically emitted.  The top-level JSON keys are
+
+          results
+          refmjd
+          loc
+          vel
+          nobs
+          resid
+          ephem
+	  
+
+EXAMPLES:
+	A data file in puma format for testing in the examples below:
+
+	cat > /tmp/foo.puma <<EOF
+# MJD             RA         Dec  
+57844.228380  130.661172  40.997836  0.02 0.02  -156.2570 20.7075 3064 obs1
+57844.240880  130.701687  40.962418  0.02 0.02  -156.2570 20.7075 3064 obs2
+57844.253380  130.741853  40.926034  0.02 0.02  -156.2570 20.7075 3064 obs3
+57844.265880  130.781814  40.888672  0.02 0.02  -156.2570 20.7075 3064 obs4
+57844.278380  130.821715  40.850329  0.02 0.02  -156.2570 20.7075 3064 obs5
+EOF
+	
+	Another data file in "trd" format with fixed MLO observatory location:
+
+	cat > /tmp/2019MO.trd <<EOF
+# MJD            RA         Dec  
+58656.405314  231.70637  -14.08943
+58656.409050  231.68221  -14.08766
+58656.414211  231.64902  -14.08549
+58656.424624  231.58092  -14.08040
+EOF
+
+
+
+NOTE THESE EXAMPLES ARE OUT OF DATE...  AND THEY REFER TO PUMA, not PUMA2
+
+
+	Evaluate a linear fit for a particular distance (0.0012 AU) and 
+	radial velocity (+4 km/s receding):
+
+	  puma -in /tmp/foo.puma -r 0.0012 -v 4 -verbose 3
+
+
+
+	Seek r,v starting with a grid search, followed by a fit:
+
+	  puma -in /tmp/foo.puma -grid -fit
+
+Orbit with respect the Sun
+L=            0.256       -0.722       30.738 // [AU*km/s]
+Peri=        -0.887        0.434        0.018 // [AU]
+E,P,a=     -413.620        1.111        1.072 // [(km/s)^2] [year] [AU]
+RA_Dec=     289.559       88.573 // [deg]
+ecc,i=        0.079        1.427 // [] [] [deg]
+Om,om,nu=       19.559      225.604       36.994 // [deg]
+t0=    57844.253380  // [MJD] reference time t=0
+r=          1488996  // [km] distance from obs to obj at t=0
+rau=     9.9533e-03  // [AU] distance from obs to obj at t=0
+dlnr=        0.0017  // uncertainty in log(r)
+vr=          -0.666  // [km/s] radial velocity of obj wrt obs
+dV=           0.023  // [km/s] uncertainty in vr
+rvcov=       -0.667  // covariance between r and vr
+chi/N=        0.041  // chi^2/Ndof
+xrms=         0.001  // [arcsec] cross-track RMS
+trms=         0.003  // [arcsec] tangential RMS
+xcrv=         1.659  // [arcsec/day^2] cross-track curvature
+tcrv=        -0.416  // [arcsec/day^2] tangential curvature
+xcrvt2=       0.000  // [arcsec] cross-track curv times <dt>^2
+tcrvt2=      -0.000  // [arcsec] tangential curv times <dt>^2
+
+	Note that this is using the default 1.86 arcsec/pix the input dmag 0.02
+	to estimate observation errors.  The cross-track and along-track
+	residuals xresid, tresid, RMSx, RMSt are a few milliarcsec for this
+	mathematical exercise.  CRVx,t are the residual curvature of the fits
+	across and along-track in arcsec/day^2 and the quadrature sum.
+
+
+
+	Do a grid evaluation on puma input format, dump out all grid points,
+	isolate	the chi^2 summaries, write and read and display with monsta:
+
+	  puma -in /tmp/foo.puma -grid -verbose 2 | \
+             grep Chi: | awk '{print $1,$3,$5}' > /tmp/foo.dat
+	  monsta cmd="rpts 1 /tmp/foo.dat; log 1; tv 1 cf=jt"
+
+
+
+	Do a grid search in linear mode, orfit input data, print grid
+	points with chi^2/N<1
+
+	  puma -in /tmp/formatpuma03.txt -linear -verbose 2 | \
+             grep Chi: | awk '$5<1{print $0)}'
+
+
+
+	Search a set of detections in "trd" format for optimum r,vr.  Note that
+	the observatory location must be supplied for trd format (and must be
+	the same for all points).
+
+	  puma -in /tmp/2019MO.trd -lng -155.5763 -lat 19.5363 -elev 3397 -grid -fit
+
+Orbit with respect the Sun
+L=            1.480        0.030       38.798 // [AU*km/s]
+Peri=         0.594       -0.684       -0.022 // [AU]
+E,P,a=      -61.168       19.528        7.252 // [(km/s)^2] [year] [AU]
+RA_Dec=       1.178       87.815 // [deg]
+ecc,i=        0.875        2.185 // [] [] [deg]
+Om,om,nu=       91.178      140.177      319.184 // [deg]
+t0=    58656.413300  // [MJD] reference time t=0
+r=          1119027  // [km] distance from obs to obj at t=0
+rau=     7.4802e-03  // [AU] distance from obs to obj at t=0
+dlnr=        1.5568  // uncertainty in log(r)
+vr=         -15.468  // [km/s] radial velocity of obj wrt obs
+dV=          14.859  // [km/s] uncertainty in vr
+rvcov=       -0.947  // covariance between r and vr
+chi/N=       21.704  // chi^2/Ndof
+xrms=         0.211  // [arcsec] cross-track RMS
+trms=         0.253  // [arcsec] tangential RMS
+xcrv=        28.032  // [arcsec/day^2] cross-track curvature
+tcrv=        26.879  // [arcsec/day^2] tangential curvature
+xcrvt2=       0.001  // [arcsec] cross-track curv times <dt>^2
+tcrvt2=       0.001  // [arcsec] tangential curv times <dt>^2
+
+
+
+	Create a set of extra MJD values for puma evaluation to see how close
+	a trajectory comes to the Earth (linear approximation of course).  This
+	trajectory comes within 0.0006 AU (Earth's radius is 0.00004 AU), so
+	merits a closer look.
+
+	  MJDs=$(echo 58656.{3..9}, 58657.{0..4}, | sed "s/ //g")
+	  puma -in /tmp/2019MO.trd -lng -155.5763 -lat 19.5363 -elev 3397 -grid -fit -ephmjd $MJDs -verbose 1
+
+Around R,VR 6.952e-03 -15.789 are 1 OK chi from 22.7631 to 22.7631
+Rock loc:  0.003486 -1.022221  0.000669   vel: 37.909622 13.194015 -1.456440
+   dti[day]   xresid    tresid      chi^2    RAobs   Decobs      RAfit   Decfit   Delta
+  -0.1133      0.000     0.000      0.000    0.0000   0.0000  232.2746 -13.9575  0.0085
+  -0.0133      0.000     0.000      0.000    0.0000   0.0000  231.8802 -13.9226  0.0076
+  -0.0080     -0.150    -0.185      5.676  231.7064 -14.0894  231.7063 -14.0894  0.0076
+  -0.0042      0.329     0.402     26.935  231.6822 -14.0877  231.6823 -14.0878  0.0075
+   0.0009     -0.213    -0.245     10.507  231.6490 -14.0855  231.6490 -14.0854  0.0075
+   0.0113      0.034     0.041      0.289  231.5809 -14.0804  231.5809 -14.0804  0.0074
+   0.0867      0.000     0.000      0.000    0.0000   0.0000  231.3799 -13.8775  0.0067
+   0.1867      0.000     0.000      0.000    0.0000   0.0000  230.7239 -13.8168  0.0058
+   0.2867      0.000     0.000      0.000    0.0000   0.0000  229.8264 -13.7310  0.0049
+   0.3867      0.000     0.000      0.000    0.0000   0.0000  228.5250 -13.6004  0.0040
+   0.4867      0.000     0.000      0.000    0.0000   0.0000  226.4709 -13.3802  0.0031
+   0.5867      0.000     0.000      0.000    0.0000   0.0000  222.7618 -12.9393  0.0022
+   0.6867      0.000     0.000      0.000    0.0000   0.0000  214.2101 -11.7182  0.0013
+   0.7867      0.000     0.000      0.000    0.0000   0.0000  181.3210  -4.8115  0.0006
+   0.8867      0.000     0.000      0.000    0.0000   0.0000   97.5641  13.5613  0.0007
+   0.9867      0.000     0.000      0.000    0.0000   0.0000   74.3956  14.8677  0.0015
+Orbit with respect the Sun
+L=            1.480        0.030       38.798 // [AU*km/s]
+Peri=         0.594       -0.684       -0.022 // [AU]
+E,P,a=      -61.168       19.528        7.252 // [(km/s)^2] [year] [AU]
+RA_Dec=       1.178       87.815 // [deg]
+ecc,i=        0.875        2.185 // [] [] [deg]
+Om,om,nu=       91.178      140.177      319.184 // [deg]
+t0=    58656.413300  // [MJD] reference time t=0
+r=          1119027  // [km] distance from obs to obj at t=0
+rau=     7.4802e-03  // [AU] distance from obs to obj at t=0
+dlnr=        1.5568  // uncertainty in log(r)
+vr=         -15.468  // [km/s] radial velocity of obj wrt obs
+dV=          14.859  // [km/s] uncertainty in vr
+rvcov=       -0.947  // covariance between r and vr
+chi/N=       21.704  // chi^2/Ndof
+xrms=         0.211  // [arcsec] cross-track RMS
+trms=         0.253  // [arcsec] tangential RMS
+xcrv=        28.032  // [arcsec/day^2] cross-track curvature
+tcrv=        26.879  // [arcsec/day^2] tangential curvature
+xcrvt2=       0.001  // [arcsec] cross-track curv times <dt>^2
+tcrvt2=       0.001  // [arcsec] tangential curv times <dt>^2
+
+	Generate an ephemeris prediction for a time in the future.  For
+	this case we use "-grid" to explore the range of acceptable
+	R and VR, "-ephmjd" specifies the date for the prediction,
+	and the output RA,Dec appear in columns 2,3 of 2019MO.eph.  With
+	simple trd format it may be worth specifying the typical astrometric
+	uncertainty, "-obserr 0.5" (arcsec).
+
+	  puma -in /tmp/2019MO.trd -lng -155.5763 -lat 19.5363 -elev 3397 \
+	    -grid -fit -obserr 0.5 \
+	    -ephmjd 58657.0 -ephout /tmp/2019MO.eph
+
+
+	Generate ephemeris predictions for each observed date.  These
+	coordinates will differ slightly from those reported as residuals
+	because...
+
+          rock=2019XC1
+	  puma2 -in $rock.trd -fit -resid - -ephmjd "$(awk '{printf "%s,", $1}' $rock.trd)"
+
+
+JSON OUTPUT:
+
+        Example: mt --instance=atlas_T05 --puma T2514189 | puma2 -in - -fit -ephmjd 58878.3 -json| jshon
+
+        "jshon" is a standalone program that can parse and pretty-print JSON.
+
+        {
+         "refmjd": [
+          58878.257364999998
+         ],
+         "loc": [
+          -0.62137600000000004,
+          0.76690000000000003,
+          -0.0044759999999999999
+         ],
+         "vel": [
+          -22.845154999999998,
+          -17.516567999999999,
+          -0.87546900000000005
+         ],
+         "nobs": 4,
+         "resid": [
+          {
+           "idx": 1,
+           "MJDobs": 58878.234206000001,
+           "dt": -0.023199999999999998,
+           "xresid": -0.033000000000000002,
+           "tresid": 0.056000000000000001,
+           "sigma": 0.38,
+           "RAobs": 56.22325,
+           "Decobs": -7.1207399999999996,
+           "RAfit": 56.223247999999998,
+           "Decfit": -7.1207580000000004,
+           "Delta": 0.01004,
+           "wtan": 0.1875,
+           "wpa": 43.640000000000001
+          },
+          {
+           "idx": 2,
+           "MJDobs": 58878.237419999998,
+           "dt": -0.019900000000000001,
+           "xresid": 0.083000000000000004,
+           "tresid": -0.076999999999999999,
+           "sigma": 0.67700000000000005,
+           "RAobs": 56.223750000000003,
+           "Decobs": -7.1202899999999998,
+           "RAfit": 56.223744000000003,
+           "Decfit": -7.1202589999999999,
+           "Delta": 0.01004,
+           "wtan": 0.1905,
+           "wpa": 43.030000000000001
+          },
+          {
+           "idx": 3,
+           "MJDobs": 58878.257364999998,
+           "dt": 0.0,
+           "xresid": -0.44900000000000001,
+           "tresid": 0.109,
+           "sigma": 2.0059999999999998,
+           "RAobs": 56.226880000000001,
+           "Decobs": -7.1168100000000001,
+           "RAfit": 56.226953000000002,
+           "Decfit": -7.1169159999999998,
+           "Delta": 0.010059999999999999,
+           "wtan": 0.21729999999999999,
+           "wpa": 42.32
+          },
+          {
+           "idx": 4,
+           "MJDobs": 58878.262427000001,
+           "dt": 0.0051000000000000004,
+           "xresid": 0.13400000000000001,
+           "tresid": -0.025000000000000001,
+           "sigma": 0.95799999999999996,
+           "RAobs": 56.22786,
+           "Decobs": -7.1160300000000003,
+           "RAfit": 56.227837999999998,
+           "Decfit": -7.1159990000000004,
+           "Delta": 0.010070000000000001,
+           "wtan": 0.22639999999999999,
+           "wpa": 42.840000000000003
+          }
+         ],
+         "neph": 1,
+         "ephem": [
+          {
+           "idx": 5,
+           "MJDobs": 58878.300000000003,
+           "dt": 0.042599999999999999,
+           "xresid": -0.017000000000000001,
+           "tresid": 1.409,
+           "theta": 1.409,
+           "RAgct": 56.236600000000003,
+           "Decgct": -7.1083480000000003,
+           "RAfit": 56.236206000000003,
+           "Decfit": -7.1083730000000003,
+           "Delta": 0.010109999999999999,
+           "wtan": 0.3256,
+           "wpa": 51.189999999999998
+          }
+         ],
+         "results": {
+          "bound-to": "sun",
+          "E": -484.02100000000002,
+          "P": 0.877,
+          "a": 0.91600000000000004,
+          "ecc": 0.082000000000000003,
+          "i": 1.7549999999999999,
+          "ndet": 4,
+          "ndate": 1,
+          "t0_mjd": 58878.257364999998,
+          "r_km": 1507234,
+          "r_au": 0.01008,
+          "dlnr": 1.4378,
+          "Vr": 1.831,
+          "Vr\/r": 0.10498,
+          "dVr": 3.0521600000000002,
+          "rvcov": -0.72599999999999998,
+          "chi\/N": 2.7730000000000001,
+          "xrms": 0.23799999999999999,
+          "trms": 0.072999999999999995,
+          "xcrv": 47.485999999999997,
+          "tcrv": -5.149,
+          "tperi_mjd": 58869.739999999998,
+          "rperi_au": 0.0023219999999999998,
+          "wperi": 26.383500000000002,
+          "raperi": 336.80000000000001,
+          "decperi": -6.2000000000000002,
+          "units": {
+           "E": "[(km\/s)^2]",
+           "P": "[year]",
+           "a": "[AU]",
+           "i": "[deg]"
+          }
+         }
+        }
+
+
+BUGS AND CHANGES:
+	210328 - treat Earth/Moon acc separately for nearby rocks
+	200110 - massive improvements over puma1
+	191119 - improve ephemeris scatter file
+	190925 - verify ephemeris predictions, and provide an example
+	190729 - a few updates
+	180101 - derived from ssorb with actual orbit fitting option removed
+
+SEE ALSO:
+	ssorb, orfit
+
+AUTHOR:
+	John Tonry
+
+VERSION:

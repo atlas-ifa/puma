@@ -1,0 +1,598 @@
+.nf
+NAME:
+	pumalink - link detections that form consistent orbits
+
+SYNOPSIS:
+	pumalink trdfile [options]
+
+DESCRIPTION: 
+
+        pumalink read a set of detections in TRD9 format, assembles detections
+        into "vectors" or "tracklets", projects each vector to a reference
+        time, links plausible pairs of vectors into potential "quads", tests
+        each quad for being a viable object with puma, groups the resulting
+        quads, and refits the new groups.
+
+        pumalink can work in two different modes for assembling vectors.  In
+        the first mode pumalink joins pairs of detections that are close in
+        time and close in angular separation.  For the other mode the user
+        specifies a file with sets of detections which are to be used as the
+        vectors for that epoch.
+
+        The input detection format is "TRD9", consisting of 9 fields:
+
+          MJD = modified Julian date at the exposure midpoint
+          RA Dec = [deg] J2000 coordinates on the sky of the detection
+          xerr terr = [arcsec] cross-track and along-track estimated error
+          lng lat = [deg] longitude and latitude of the observatory
+          elev = [m] elevation of the observatory
+          ID = an arbitrary unique string that distinguishes detections
+
+        A reasonable estimate for the cross-track error is the point spread
+        function (PSF) full width half maximum divided by the detection SNR
+        (inverse magnitude error).  A crude estimate for the along-track error
+        is the cross-track error multiplied by the square root of the ratio of
+        the detection's major to minor axis.
+
+        The "ID" must be unique for each detection, and it cannot contain
+        either white space or commas.  It is acceptable for there to be
+        multiple detections for a single object in the input (perhaps from
+        different detection algorithms), but these should have different IDs,
+        and puma will treat them as independent, only grouping them at the end.
+
+        These are the steps carried out by pumalink.
+
+        STEP 1:
+        -------
+
+        Use read_trd() to read all the detections from the two input files.
+
+
+        STEP 2:
+        -------
+
+        For the first (default) vector mode, form all pairs of detections
+        using link_det() to form a plausible vectors.  A plausible vector is
+        comprised of two detections that occur within a time "dtmax" ("-dtmax
+        T") of one another and which imply an angular velocity which is less
+        than "omega" ("-omega W").
+
+        For the second, alternate vector mode, a file is specified for one or
+        both epochs ("-vec1 fname" or "-vec2 fname") which consists of comma
+        separated lists of detection IDs from that epoch.  For each such
+        vector puma looks up all the detection IDs amidst the detection input.
+
+        Once vectors have been formed from the two sets of detections, puma
+        chooses a reference ephemeris time which is the average of the biggest
+        time gap among all the detections.  The user may also specify a
+        reference time if desired ("-mjd M").
+
+
+        STEP 3:
+        -------
+
+        For each new vector, use pumephem() to project its location to the
+        reference time.  This depends on the unknown distance r and radial
+        velocity vr of the putative object, so pumephem() projects the
+        location based on a grid of assumed r,vr and performs a linear fit to
+        the results as a function of s=1/r and w=vr/r.  This set of r,vr
+        inputs for the puma projections is specified as a grid over a span in
+        r and a span in vr ("-grid nr,rmin,rmax,nv,vmin,vmax").  Given the
+        angular velocity of the vector, the constituent detections, the
+        intra-epoch time of dt, and the projection interval Dt to the
+        reference time, values for r,vr which result in unphysical velocity
+        ("-vmax V"), imminent collision ("-wdt X"), or a bad puma fit
+        ("-chiephem C") are excluded.
+
+        If requested the individual results of these puma projections can be
+        written to a "scatter file" ("-nscat N" "-scat file").  It is unwise
+        to do this for more than a single pair of vectors.
+
+
+        STEP 4:
+        -------
+
+        Every pair of detections has been examined to see if it can make a
+        vector, or otherwise vectors have been assembled from an externally
+        provided list.  Every vector has been projected forward or backward in
+        time to the common reference epoch with full information about how
+        this position depends on r,vr.  The function pumaquad() now assembles
+        pairs of these vectors into "quads".
+
+        The first part of this step finds all pairs of vectors from the first
+        and second epochs (a "quad") that project to the same place on the
+        sky.  The angular position and angular velocity are expressed in
+        cartesian coordinates to avoid polar singularities.  Using a unit
+        vector tolerance [rad] ("-dxmax X") and an angular velocity tolerance
+        [rad/sec] ("-dwmax W") pumaquad() uses a kd-tree to find all possible
+        matches.  Note that the dimensionless number Dt/dt plays a big role in
+        what tolerance is required.  Given an extrapolation of Dt=1 day from
+        dt=0.5 hour (Dt/dt=50), the default values for dxmax and dwmax should
+        result in a very high probability of detection at this stage.  Given
+        an extrapolation time Dt=3.5 day and dt=2min (Dt/dt>2000), the default
+        values may to be increased by a factor of 3-5 in order to keep the
+        detection probability high.
+
+        The second part of pumaquad() is to use pumalink() to compare the
+        linear fits from the match between two vectors and compute a value for
+        chi^2 at the best fitting value of r,vr (s,w).  If this value is less
+        than chimax ("-chimax C") this match is carried forward.
+
+        The third part of pumaquad() is to use pumatest() to do a new puma fit
+        to the set of detections from the pair of matched vectors.  If chi^2/N
+        from this fit is less than chinmax ("-chinmax c"), pumaquad()
+        designates this pair of vectors as a legitimate quad, and the fit
+        parameters are saved as part of a QUAD structure.
+
+        It can be helpful to pay attention to the results of both pumalink and
+        puma, so an additional test of chi*chin<chiprod ("-chiprod P") is
+        applied before a quad is declared to be successful.  The reason this
+        is helpful is that it helps inhibit puma's ability to fit four
+        detections with an orbit that is either very nearby or closing very
+        fast.
+
+
+        STEP 5:
+        -------
+
+        There may be "duplicate" input detections, either because of multiple
+        detection algorithms reporting the same signal or because of more
+        observations than 2 which can form a vector for the same object from a
+        given set.  For example, a set of 4 observations can produce (4 2)=6
+        possible 2 detection vectors, and this could be 96 vectors if each
+        detection is duplicated 2 times on each observation.  pumalink makes
+        no attempt to detect or consolidate these duplicates on input - it
+        just executes on all possible vectors.  However, once pumalink has
+        created all possible vectors and quads, it executes quadgroup() and
+        quadsubgroup() to group the resulting quads.
+
+        At the first level of grouping, quadgroup() identifies "detection
+        groups" of quads that share detections.  It is common for the same
+        object to appear as multiple quads if there are duplicate detections.
+        Because spurious cross-links between vectors from two objects may
+        possibly form a quad, it is also possible for there to be more than
+        one real object in one of these groups.  However, quads from two
+        different detection groups are guaranteed to share no detection, and
+        it is therefore unlikely that a real object will have a quad in two
+        different detection groups.  By definition every quad makes a group of
+        at least four detections, so all quads and all detections are assigned
+        a detection group number.
+
+        The second level of grouping for each group is performed by
+        quadsubgroup() which examines each quad's fitted angular position and
+        angular velocity (from Earth-Moon barycenter at the reference time) of
+        all the members of a detection group.  Any pair of quads which lie
+        closer than grptol ("-grptol T,W") starts a "state subgroup", and this
+        state subgroup is expanded until no member pairs with another in the
+        rest of detection group within this tolerance.
+
+        However, this linkage is also restricted to detections from a given
+        observation time which are plausibly duplicate detections of the same
+        object.  Two quads which project close to one another but which
+        have detections from the same observation time that differ by more
+        than 0.003 deg [DETPROX] are not allowed to link.  This helps to
+        suppress grouping caused spurious cross-linkages between detections
+        and helps keep quads in separate state subgroups.
+
+        If a quad does not form a state subgroup with any other quad it is
+        assigned a state subgroup number which has a leading "0".  This does
+        not mean that the quad cannot be a valid object, it simply indicates
+        that only one set of detections for this object managed to link
+        together into a quad.
+
+
+        STEP 6:
+        -------
+
+        The final step is to visit all state subgroups with more than one
+        quad, consolidate all their detections, and do a single puma fit to
+        the entire list of detections.
+
+
+        OUTPUT:
+        -------
+
+        The output from pumalink may be directed to two files instead of
+        stdout ("-quad qfile" and "-grp grpfile").  The line format for the
+        two is the same:
+
+          det_group.state_subgroup = detection group number and
+                                     state subgroup number
+          chi      = log(chi^2) from the pumalink test for this subgroup
+          chin     = log(chi^2/N) from the puma test for this subgroup
+          chin1    = log(chi^2/N) for the hypothesis that this object is
+                     stationary
+          chin2    = log(chi^2/N) for the hypothesis that the detections for
+                     this object are stationary at each of the two epochs
+          rfit     = fitted barycenter distance [AU]
+          wfit     = fitted barycenter radial velocity divided by distance
+                     vr/r [/day]
+          dlnr     = uncertainty in fitted natural logarithm of distance
+          dwr      = uncertainty in fitted vr/r [/day]
+          x,y,z    = unit vector at reference time from barycenter
+          wx,wy,wz = tangential angular velocity components at reference time
+                     from barycenter [deg/day]
+          ndet     = number of detections in this group
+          dets     = comma separated list of contributing detection IDs
+
+        The group file consists of all the detection groups and state
+        subgroups that pumalink has assembled.  The quad file consists of all
+        the individual quads, prior to grouping, although the group.subgroup
+        listed refers to the eventual group it wound up in.  Note that a
+        subgroup with leading "0" (e.g. group.subgroup of 17.01) means that
+        this quad is not part of the group output file but may still be a
+        legitimate object, whereas a state subgroup without a leading 0 means
+        that this quad has been absorbed into a larger state subgroup which
+        appears in the group file.  This can also be discerned from the "ndet"
+        field in the output, of course.
+
+
+OPTIMIZING:
+
+        There are really three stages to detection linkage:
+          1. selecting detections to link
+          2. linking
+          3. identifying and removing false alarms
+
+        One of the reasons to make pumalink so fast is to reduce the necessity
+        of culling detections at the first stage, because requiring *all*
+        detections of a quad that has a tentative link to be probably real is
+        much more incisive than the probability of each one.  Nevertheless the
+        execution time will go as the square of the number of input detections
+        and the angular velocity, so selection on the input detections is
+        important, in particular if there are a large number of exposures on
+        the same object at a given epoch because pumalink considers all
+        N-choose-2 pairs.
+
+        Pair formation from all the detections is governed by the parameters
+        dtmax and omega.  The execution time goes goes approximately as the
+        square of the product of dtmax and omega, as does the false alarm
+        rate.  For the case of very fast moving, trailed detections it is
+        possible to test all possible pairs with pumalink, at a cost of about
+        10nsec Ndet^2.
+
+        The accuracy of the linear fit to puma extrapolations of tracklets is
+        affected by the choice of the extrapolation grid.  Since the predicted
+        locations and error grows with s=1/rho, it is more efficient to use a
+        minimal grid that does not extend to very small distance, but this
+        runs the risk of not linking a very nearby object.  When pumalink is
+        given a user-defined set of tracklets there may not be much latitude
+        to explore a large grid, and many of the grid points may be rejected
+        by the puma extrapolation because they exceed the chieph parameter.
+
+        pumalink sorts the extrapolated positions using a kd-tree in order to
+        judge which tracklets should be tested with the pumalink chi^2
+        calculation.  We have not yet found a way to exploit the very tiny
+        volume that these extrapolations occupy in 6D space, and instead use
+        an enclosing volume described by the parameters dxmax and dwmax for
+        the allowable difference in unit vector and tangential velocity.
+        These default parameters are not adjusted by pumalink for the time
+        interval Dt between epochs, which is the main reason for the
+        degradation in PD with increasing Dt.
+
+        Once a pair of tracklets is known to be close in 6D space at the
+        reference time, the pumalink chi^2 comparison tells us whether there
+        really is a rho,rhodot for which the two tracklets are statisically
+        close to one another.  The parameter chimax governs whether the pair
+        will be rejected or kept as a possible quad.  chimax may be increased
+        to avoid losing very nearby objects whose puma extrapolation may not
+        be well matched by a linear function of s,w, but at the cost of more
+        false alarms.
+
+        The choice of kd-tree search parameters is the primary tradeoff
+        between performance closer than 0.1~AU and processing time, and the
+        pumalink code is not as efficient as it could be in this regime.  With
+        the default parameters pumalink spends ~50usec per kd-tree search to
+        find each close pair of tracklets that is then passed to the pumalink
+        algorithm, but only ~0.25~usec for the pumalink calculation to accept
+        or reject them.  More efficient sorting and pairing would allow the
+        kd-tree parameters to be relaxed without a performance penalty.
+
+        Quads that have been passed by the pumalink calculation then have
+        their detections fitted by puma, and they are kept if chi^2/N is less
+        than chinmax and chiprod.  Again the false alarm rate rises rapidly
+        with statistically unlikely values for chinmax, even though exceptional
+        real objects may require it.
+
+        The detection grouping carried out by pumalink is straightforward, but
+        the grouping of quads by interpolation to the reference time is
+        goverend by the parameter grptol.  It is possible to widen this, at
+        the cost of putting multiple objects in the same group, or to tighten
+        it, at the cost of failing to groups multiple quads of the same group.
+
+
+DEBUGGING:
+
+        The main frustration is when pumalink fails to link a good quad in the
+        detections.  There are two methods to find out why this happens.
+
+        You can use just those four detections as input to pumalink, so the
+        execution time is almost instantaneous.  Using process of elimination,
+        successively raise all the different control parameters until the
+        detections are linked.  This almost always works, and it is usually a
+        dxmax or dwmax that is a bit too small because of short dt, long Dt,
+        or accelerating asteroid.  It is also possible to give exactly the
+        same four detections to puma itself to see what the fitted orbit
+        parameters are.
+
+        Another possibility is to enable extensive debugging the the "-DEBUG"
+        flag.  This writes detailed information at all stages of detection
+        input, pair formation, vector extrapolation, and quad linking.  You
+        will need to consult the source code to understand the contents of
+        each of these files, but this provides a means to deductively work out
+        what went wrong for this particular quad.
+
+
+FALSE ALARMS:
+
+        The default pumalink parameters for chimin and chinmin are very
+        generous for passing along linkages of bogus detections or
+        mis-linkages of real detections.  This is deliberate: it really is up
+        to the user to decide how to balance probability of detection versus
+        false alarm rate versus execution time.  For each application there
+        are four methods that can be applied to optimize the tradeoff between
+        these three things.
+
+          1. It is generally possible to formulate some sort of real/bogus
+             probability for each detection using information that is not
+             presented to pumalink in the TRD9 file.  Simply use this
+             information for the detections that make up each quad, look at
+             the puma results for chin and any other fit information (such as
+             chin1<10 or unreasonable physical velocities from the fit), set
+             some thresholds, and accept or reject quads on that basis.
+
+             For example, for the ATLAS Acam ddc files here is an awk function
+             that computes a "probability the detection is real" for each line
+             of the file.  It uses the magnitude uncertainty dm, the tphot
+             chi^2/N for the fit match to PSF chi, the proximity to the nearest
+             Acam edge, and the vartest Ptr value.  It computes probabilities
+             based on the SNR (magnitude error), fit match to PSF, proximity to
+             edge, and Ptr for low SNR detections, multiplies them into an
+             aggregate, takes the logarithm and clips at -9.99.  It avoids
+             discontinuities in Pchi and Pvt with a linear interpolation.
+
+         function ddcprob(dm,chi,edge,Ptr) {
+         # Logistic function rolloff of realness based on dmag
+           sa=0.96; sz=0.01; sc=0.135; sw=0.015;  # logistic fn params for dmag
+           arg=(dm-sc)/sw;
+           Psnr=(arg<-23) ? sa+sz : (arg>23) ? sz : sa/(1+exp(arg))+sz;
+         # Pay attention to the det shape via chin if noisy with dmag>0.12
+           ca=0.9;  cz=0.1;  cc=1.7;   cw=0.4;    # logistic fn params for chin
+           arg=(chi-cc)/cw;
+           Pchi=(arg<-23) ? ca+cz : (arg>23) ? cz : ca/(1+exp(arg))+cz;
+         # ...but disable Pchi for bright things with dm<0.02
+           if(dm>0.02 && dm<0.05) Pchi+=(1-Pchi)*(0.05-dm)/0.03;
+           if(dm<=0.02) Pchi=1;
+         # Believe Ptr only if a noisy detection with dmag>0.12
+           Pvt=Ptr/999;  if(dm<=0.12) Pvt=1;
+           if(dm>0.12 && dm<0.15) Pvt+=(1-Pvt)*(0.15-dm)/0.03;
+         # Roll off edge prob to 80% starting at 100 pixels from the edge
+           Pxy=1; if(edge<100) Pxy=1-(edge-100)*(edge-100)/5e4;
+           Prob=Psnr*Pchi*Pvt*Pxy; logP=Prob>1e-10 ? log(Prob)/log(10) : -9.99;
+         return(logP)}
+
+          2. pumalink provides a simple grouping mechanism, and groups with
+             more than 4 detections are more likely to be real than simple
+             quads, even though fainter detections may only form a quad.
+             pumalink does not know how many exposures there are on a given
+             field so it is up to the user to decide on group restrictions.
+
+             It is also possible to use a process of elimination to remove
+             mis-linkages based on shared detections.  If a detection is
+             securely claimed by a large group with low chin, it cannot be
+             part of a different quad that did not dissolve into this group
+             (or the group forming tolerances were too tight), and that quad
+             may be understood to be a mis-linkage.
+
+          3. Since there are fewer detections participating in potential false
+             alarm quads or groups, it may be possible to find the CPU time to
+             re-examine the images themselves and re-classify the detections,
+             thereby providing an improved probability to be used in the first
+             method.
+
+          4. It may be possible to test each quad or group for consistency
+             with more detections.  If the orbit fit is interpolated to
+             exposures where pumalink did not find a matching detection, it
+             may be possible to test whether a detection is in fact present,
+             possibly by looking at a lower statistical significance, possibly
+             by testing within some sort of astrometric error.  False alarms
+             match only at the background density of detections whereas real
+             objects will tend to have confirming detections.
+
+             A variant of this method when there are more than two epochs
+             available is to hierarchically test pairs of epochs.
+
+
+OPTIONS:
+
+	-verbose N    [default 0]
+	  increase verbosity to level N
+
+	-DEBUG        [default not]
+	  dump extensive debugging information to /tmp/pumalink_debug.det,
+          .pair, .vec, and .quad.
+
+	-omega W      [default 5 deg/day]
+	  do not form pairs of detections into a vector that would have
+          an angular velocity greater than W
+
+	-dtmax T      [default 0.1 day]
+	  do not form pairs of detections into a vector that would have
+          a time separation greater than T
+
+	-split s      [0/1, default 1]
+	  split the detections into two groups, before and after the reference
+          time, and form vectors only within the two groups.  Choosing split=0
+          would be appropriate for a single night where any pair of detections
+          is permitted to form a vector
+
+	-mjd M        [default middle of biggest time gap]
+	  specify a reference time
+
+        -vec1 fname   [default not]
+        -vec2 fname   [default not]
+          use a comma separated list of detection IDs for epoch 1 or epoch 2
+          (or both), rather than forming them from detection pairs that are
+          closer than omega*dt
+
+
+FIT OPTIONS:
+	-grid nr,rmin,rmax,nv,vmin,vmax     [default 5,0.02,4,5,-20,20]
+	  evaluate a puma extrapolation to the ephemeris time on this
+	  grid and fit a linear function in s,w r has units [AU] and v
+	  units of [km/s].
+
+	-trig N,rmin,vmax                   [e.g. 6,0.02,20]
+	  evaluate a puma extrapolation to the ephemeris time on this
+	  triangular grid and fit a linear function in s,w r has units [AU]
+          and v units of [km/s].  This grid is a triangle in s,w that
+          extends from s=0 to smax=1/rmin and is subdivided into N points
+          in w from -vmax/smax to +vmax/smax at smax, decreasing linearly
+          to 1 point in w at the apex at s=0.
+
+          (currently) This is a more efficient sampling of s,w space, but
+          by weighting the s=0 region more lightly it does a little less
+          well on distant asteroids.
+
+	-trmax R        [default 100 AU]
+	  use this as the maximum radius for the -trig option
+          
+	-wdt X          [default 0.5]
+	  do not use any grid point for the linear fit whose value of vr/r*Dt
+          is smaller than X
+          
+	-vmax V          [default 100 km/s]
+	  do not use grid point for the linear fit whose puma extrapolation
+          physical velocity exceeds V
+
+	-chieph C        [default 100]
+	  do not use any puma extrapolation whose chi^2/N exceeds C
+
+LINK OPTIONS:
+	-dxmax X      [default 0.005 (rad)]
+	  do not link two projected vectors whose unit vectors differ by more
+          than X
+
+	-dwmax V      [default 2e-7 rad/sec]
+	  do not link two projected vectors whose angular velocities
+          differ by more than V (NB: 1 deg/day = 2e-7 rad/sec)
+
+	-chimax C        [default 25]
+	  reject any pair of vectors whose pumalink chi^2 test exceeds C
+
+	-chinmax c       [default 25]
+	  reject any pair of vectors whose puma chi^2/N test exceeds c
+
+	-chiprod P       [default 200]
+	  reject any pair of vectors for which chi from pumalink and chin
+          from puma exceeds chi*chin > P
+
+
+GROUPING OPTIONS:
+	-grptol T,W   [default 0.0002,0.002, (rad,deg/day)]
+	  link members of a group into a subgroup if their unit vectors lie
+          closer than T and d their angular velocity lie closer than W.
+
+
+OUTPUT OPTIONS:
+        -quad fname        [default stdout]
+          write quads to this file
+
+	-grp fname       [default stdout]
+	  write quad groups to this file
+
+	-nscat N          [default 100]
+	  number of random realizations of observations and r,vr for each
+	  ephemeris date.
+
+	-scat fname       [default none]
+	  if ephemeris scatter plot, write to this file
+
+	-verbose N        [default 0]
+          increase verbosity of internal processing
+
+
+EXAMPLES:
+        These data comprise a number of detections of the same object on four
+        different nights.
+
+  cat > /tmp/59989.trd <<EOF
+59989.959764 154.02714   9.95168  0.161  0.177   20.8107  -32.3802 1764 03a59990o0444o.0753
+59989.976273 154.02296   9.95215  0.171  0.186   20.8107  -32.3802 1764 03a59990o0478o.1388
+59990.048776 154.00433   9.95415  0.186  0.204   20.8107  -32.3802 1764 03a59990o0629o.0699
+EOF
+  cat > /tmp/59991.trd <<EOF
+59991.126747 153.73801   9.98526  0.186  0.192  -70.7650  -30.4710 1609 04a59991o0261c.0995
+59991.143133 153.73388   9.98558  0.141  0.143  -70.7650  -30.4710 1609 04a59991o0295c.2084
+59991.159543 153.72954   9.98623  0.159  0.162  -70.7650  -30.4710 1609 04a59991o0327c.1147
+59991.179106 153.72447   9.98681  0.156  0.160  -70.7650  -30.4710 1609 04a59991o0365c.0886
+EOF
+  cat > /tmp/59992.trd <<EOF
+59992.127340 153.48717  10.01466  0.160  0.162  -70.7650  -30.4710 1609 04a59992o0236c.1041
+59992.144130 153.48275  10.01520  0.216  0.235  -70.7650  -30.4710 1609 04a59992o0268c.1104
+59992.162515 153.47800  10.01576  0.146  0.149  -70.7650  -30.4710 1609 04a59992o0304c.1069
+59992.186943 153.47164  10.01650  0.154  0.156  -70.7650  -30.4710 1609 04a59992o0353c.1508
+EOF
+  cat > /tmp/59993.trd <<EOF
+59993.126685 153.23490  10.04451  0.192  0.193  -70.7650  -30.4710 1609 04a59993o0265c.0884
+59993.142964 153.23065  10.04496  0.161  0.165  -70.7650  -30.4710 1609 04a59993o0299c.1054
+59993.159245 153.22643  10.04546  0.201  0.205  -70.7650  -30.4710 1609 04a59993o0332c.1065
+59993.167403 153.22429  10.04574  0.161  0.166  -70.7650  -30.4710 1609 04a59993o0348c.0991
+EOF
+
+        Run pumalink on two different pairs of nights
+
+          pumalink <(cat /tmp/59989.trd /tmp/59991.trd) \
+             -quad /tmp/59989-59991.out -grp /tmp/59989-59991.grp
+          pumalink <(cat /tmp/59992.trd /tmp/59993.trd) \
+             -quad /tmp/59992-59993.out -grp /tmp/59992-59993.grp
+
+        In this first case pumalink finds 18 quads and 1 group and
+        subgroup, in the second case pumalink finds 36 quads and one
+        group and subgroup.  This corresponds to the combinatorics of
+        the ways that pumalink can form pairs from a given trd file
+        and vectors between the trd files, but the grouping recognizes
+        they are all the same object.  If there had been detections from
+        a variety of different objects, pumalink should link them and
+        report them in different groups.  The runtime is about 10 msec.
+
+        Alternatively, collect all the data into two groups and give them to
+        pumalink.  This time pumalink returns 54 quads in the output file,
+        corresponding to the increased combinatorics.  Again pumalink puts all
+        of these quads into a single group and subgroup which it returns in
+        the quad.grp file.  The fit to all of these points finds a distance of
+        1.30 AU a radial velocity vr/r of -0.0020/day, and a distance
+        uncertainty of 18%.  The runtime is 150 msec which reflects the
+        increase in combinatorics.
+        
+          cat /tmp/59989.trd /tmp/59991.trd \
+              /tmp/59992.trd /tmp/59993.trd > /tmp/test.trd
+          pumalink /tmp/test.trd \
+             -quad /tmp/quad.out -grp /tmp/quad.grp
+
+        As a third example, extract the vectors from the two original runs
+        and use these to direct pumalink how to find 4 day quads.
+        
+          awk '{print $17}' /tmp/59989-59991.out > /tmp/59989-59991.vec
+          awk '{print $17}' /tmp/59992-59993.out > /tmp/59993-59993.vec
+          pumalink /tmp/test.trd \
+             -vec1 /tmp/59989-59991.vec -vec2 /tmp/59993-59993.vec \
+             -quad /tmp/quad.out -grp /tmp/quad.grp
+
+        This example assembles 648 quads which condense to 1 group/subgroup.
+        The advantage of this two step approach, identifying quads from a
+        limited set of detections and then resupplying them as vectors, emerges
+        when there are many objects and many false alarm detections present.
+
+
+BUGS AND CHANGES:
+	230328 - Initial release
+
+SEE ALSO:
+	puma, libpuma, pumatlas.sh
+        kdtree-master: John Tsiombikas <nuclear@member.fsf.org>
+
+AUTHOR:
+	John Tonry
+
+VERSION:
