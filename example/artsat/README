@@ -1,0 +1,5 @@
+# JWST
+mpc80_to_trd9.sh < jwst.mpc | puma -fit -in -
+
+# Integral
+mpc80_to_trd9.sh < integral.mpc | puma -fit -in -

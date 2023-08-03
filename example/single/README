@@ -1,0 +1,7 @@
+# A106kXM (SpaceX Tesla Roadster)
+mpc80_to_trd9.sh < A106kXM.mpc  > A106kXM.trd
+puma -fit -in A106kXM.trd 
+
+# 2020 VT4
+mpc80_to_trd9.sh < K20V04T.mpc > K20V04T.trd
+puma -in K20V04T.trd -fit

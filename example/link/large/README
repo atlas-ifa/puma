@@ -1,0 +1,12 @@
+pumalink large.trd -quad quad.out -grp group.out
+
+# Expected output
+# pumalink large.trd -quad quad.out -grp group.out
+# t=    0.123  dt=    0.123   Read 38132 detections from large.trd, <mjd> 60130.160
+# t=    0.302  dt=    0.180   Detections form 61923 vectors within 5.0 deg/day and 0.10 day
+# t=    4.272  dt=    3.969   61923 vectors extrapolated with 0 extrap, 0 fit failures
+# Quad   110000    96178      175      805     50.7   486838      6561535
+# t=   23.734  dt=   19.463   Vectors link to 102661 quads
+# t=   23.759  dt=    0.025   Quads group into 2100 detection groups
+# t=   24.100  dt=    0.340   Quad state vector subgroup max size 35
+# t=   24.882  dt=    0.782   Quads group into 2808 state vector subgroups

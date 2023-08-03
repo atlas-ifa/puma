@@ -1,0 +1,6 @@
+# K23G00G (2023 GG), ATLAS pairs only
+mpc80_to_trd9.sh < K23G00G.mpc > K23G00G.trd
+puma -fit -in K23G00G.trd
+
+# Entire dataset
+mpc80_to_trd9.sh < K23G00G.orig.mpc | puma -in - -fit
