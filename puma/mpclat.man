@@ -1,0 +1,35 @@
+.nf
+NAME:
+	mpclat - convert MPC cos/sin observatory location to latitude and elev
+
+SYNOPSIS:
+	mpclat rhocos rhosin -> lat[deg] elev[m]
+        mpclat lat[deg] elev[m] tompc -> rhocos rhosin
+
+DESCRIPTION: 
+
+        The Minor Planet Center observatory codes provide the latitude and
+        elevation of the observatory in terms of geocentric cosine and sine
+        terms.  mpclat converts this format to and from geodetic latitude and
+        observatory elevation above the geoid, using the WGS80 world model.
+
+EXAMPLES:
+     
+        Convert MPC rhocos and rhosin to latitude and elevation
+
+          mpclat  0.936235 +0.351547 > 20.707571 3040.9
+
+        Convert latitude and elevation to MPC rhocos and rhosin
+
+          mpclat 20.707571 3040.9 tompc > 0.936235  0.351547
+
+BUGS AND CHANGES:
+	150101 - original
+
+SEE ALSO:
+	puma, pumalink
+
+AUTHOR:
+	John Tonry
+
+VERSION:
