@@ -1,5 +1,5 @@
 # PUMA
-PUMA, short for "Position using Motion and Acceleration", is a collection of C and C++ source code to perform fast, accurate short-art orbit determination and linking using
+PUMA, short for "Position using Motion and Acceleration", is a collection of C and C++ source code to perform fast, accurate short-arc orbit determination and linking using
 algorithms described in Tonry (2023) in prep.
 
 The code consists of two executables:
