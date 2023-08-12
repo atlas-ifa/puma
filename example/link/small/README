@@ -1,0 +1,12 @@
+pumalink small.trd -quad quad.out -grp group.out
+
+# Expected output
+# $ pumalink small.trd -quad quad.out -grp group.out
+# t=    0.000  dt=    0.000   Read 16 detections from small.trd, <mjd> 60130.340
+# t=    0.001  dt=    0.000   Detections form 24 vectors within 5.0 deg/day and 0.10 day
+# t=    0.007  dt=    0.006   24 vectors extrapolated with 0 extrap, 0 fit failures
+# 
+# t=    0.026  dt=    0.019   Vectors link to 72 quads
+# t=    0.026  dt=    0.000   Quads group into 2 detection groups
+# t=    0.026  dt=    0.000   Quad state vector subgroup max size 2
+# t=    0.027  dt=    0.001   Quads group into 2 state vector subgroups
