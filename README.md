@@ -6,7 +6,7 @@ The code consists of two executables:
 * puma - fit short arc orbits
 * pumalink - evaluate linkages of pairs of detections, potentially inter-night and inter-observatory 
 
-PUMA's input is a text file of detections in "TRD9" (MJD, right ascension, declination, cross-track error, along-track error, observatory east longitude, observatory east latitude, observatory elevation, id) format.  We provide some utility Bash scripts to convert MPC80 to TRD9 format.
+PUMA's input is a text file of detections in "TRD9" (MJD, right ascension, declination, cross-track error, along-track error, observatory east longitude, observatory latitude, observatory elevation, ID) format.  We provide some utility Bash scripts to convert MPC80 to TRD9 format.
 
 There are four directories present:
 
